@@ -1,0 +1,103 @@
+from __future__ import print_function
+import numpy as np
+import h5py
+import pickle
+from keras.preprocessing import sequence
+from keras.models import Sequential,Model
+from keras.layers import Input,Dense, Dropout, Embedding, LSTM, Bidirectional
+from keras.layers.merge import concatenate
+from keras.layers.normalization import BatchNormalization
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.optimizers import Adam
+
+# Data preprocessing
+def encode(s1): #translate
+    a = []
+    dic = {'A':1,'B':22,'C':2,'D':3,'E':4,'F':5,'G':6,'H':7,'I':8,'K':9,
+           'L':10,'M':11,'N':12,'P':13,'Q':14,'R':15,'S':16,'T':17,
+           'V':18,'W':19,'Y':20,'X':21,'U':23,'J':24,'Z':25,'O':26}
+
+    for i in range(len(s1)):
+        a.append(dic.get(s1[i]))
+    return a
+
+def TrainData(s1: object) -> object:
+    seq_line = []
+    label_line = []
+    for line in open(s1):
+        if line != '\n':
+            proteinId, seq, label = line.split(',')
+            proteinId = proteinId.strip(' \t\r\n')
+            seq = seq.strip(' \t\r\n')
+            seq_line.append(encode(seq))
+            label = label.strip(' \t\r\n')
+            label_line.append(int(label))
+    return seq_line,label_line
+
+def Data_division(s1, test_split=0.15, seed=24):
+    X,labels = pickle.load(open(s1, "rb"))
+    np.random.seed(seed)
+    np.random.shuffle(X)
+    np.random.seed(seed)
+    np.random.shuffle(labels)
+
+    X_train = np.array(X[:int(len(X) * (1 - test_split))])
+    y_train = np.array(labels[:int(len(X) * (1 - test_split))])
+    X_test = np.array(X[int(len(X) * (1 - test_split)):])
+    y_test = np.array(labels[int(len(X) * (1 - test_split)):])
+
+    return (X_train, y_train), (X_test, y_test)
+
+# Load data
+(X_train, y_train), (X_test, y_test) = Data_division('data.pickle')
+
+# Model architecture
+max_features=26
+maxlen = 500
+embedding_dim = 64
+lstm_units=64
+num_classes=2
+
+model = Sequential()
+model.add(Embedding(max_features, embedding_dim, input_length=maxlen))
+model.add(Bidirectional(LSTM(lstm_units, dropout=0.2, recurrent_dropout=0.2)))
+model.add(Dense(num_classes, activation='softmax'))
+
+model.summary()
+
+# Compile the model
+model.compile(optimizer=Adam(lr=1e-4),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Train the model
+batch_size = 32
+epochs = 20
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=3)
+model_checkpoint = ModelCheckpoint(filepath='best_model.h5', monitor='val_loss', save_best_only=True)
+
+history = model.fit(X_train, y_train,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    validation_data=(X_test, y_test),
+                    callbacks=[early_stopping, model_checkpoint])
+
+# Evaluate the model
+model.load_weights('best_model.h5')
+
+score, acc = model.evaluate(X_test, y_test, batch_size=batch_size)
+print('Test score:', score)
+print('Test accuracy:', acc)
+
+# Calculate confusion matrix
+from sklearn.metrics import confusion_matrix
+y_pred = model.predict(X_test)
+confusion_mtx = confusion_matrix(y_test, np.argmax(y_pred,axis=1))
+print('Confusion Matrix:',confusion_mtx)
+
+# Calculate Sensitivity and Specificity
+sensitivity = confusion_mtx[0][0]/(confusion_mtx[0][0]+confusion_mtx[0][1])
+specificity = confusion_mtx[1][1]/(confusion_mtx[1][0]+confusion_mtx[1][1])
+print('Sensitivity:', sensitivity)
+print('Specificity:', specificity)

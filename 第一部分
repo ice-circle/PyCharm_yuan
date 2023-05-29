@@ -1,0 +1,203 @@
+from __future__ import print_function
+import numpy as np
+import h5py
+from keras.models import model_from_json
+from keras.models import load_model
+np.random.seed(24)  # reproducibility
+from keras_preprocessing import sequence
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation
+from tensorflow.python.keras.layers.embeddings import Embedding
+from tensorflow.python.keras.layers.recurrent import LSTM, GRU, SimpleRNN
+from keras.layers.convolutional import Convolution1D, MaxPooling1D
+from keras.layers import Dense, LSTM, Lambda, TimeDistributed, Input, Masking, Bidirectional
+from keras.models import Model
+from keras.datasets import imdb
+import pickle
+import Processing as pgo
+import Processing as pg
+from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from keras.utils.vis_utils import plot_model
+from tensorflow.python.keras.utils.vis_utils import  plot_model
+from gym import wrappers
+import tensorflow as tf
+from keras import regularizers
+import warnings
+
+warnings.filterwarnings("ignore")
+
+max_features = 45
+maxlen = 300
+embedding_size = 8
+# Convolution
+nb_filter = 32
+pool_length = 2
+# BiLSTM
+bilstm_output_size = 40
+# TrainingSet
+batch_size = 32
+epochs = 30
+
+X,y=pg.TrainData("data1/pretrain/AB.csv")
+
+from sklearn.model_selection import cross_val_score
+from sklearn.datasets import load_iris
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import KFold
+from keras.utils.np_utils import to_categorical
+import keras
+
+print('Loading data...')
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.15, random_state=42,shuffle=True)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train, y_train, test_size=0.15, random_state=42,shuffle=True)
+
+# X_train, X_test, y_train, y_test = train_test_split(a, b, random_state=42,shuffle=True) #进行分割
+# X_train=np.array(X_train)
+# X_test=np.array(X_test)
+y_train=np.array(y_train, dtype='int32')
+y_test=np.array(y_test, dtype='int32')
+y_val=np.array(y_val)
+# (x_finalval, y_finalval), (X1_test, y1_test) = pg.Data_division("valdata.pkl",nb_words=max_features,
+#                                                      test_split=0)
+#print(X_train)
+print(len(X_train), 'train sequences')
+#print(X_test)
+print(len(X_test), 'test sequences')
+#print(X_val)
+print(len(X_val), 'val sequences')
+
+print('Pad sequences (samples x time)')
+X_train = sequence.pad_sequences(X_train, maxlen=maxlen)
+X_test = sequence.pad_sequences(X_test, maxlen=maxlen)
+X_val=sequence.pad_sequences(X_val,maxlen=maxlen)
+print('X_train shape:', X_train.shape)
+
+print('X_test shape:', X_test.shape)
+
+print('X_val shape:', X_val.shape)
+# Build model
+print('Build model...')
+model = Sequential()
+model.add(Embedding(max_features, embedding_size, input_length=maxlen))
+model.add(Dropout(0.2))
+model.add(Convolution1D(filters=nb_filter,
+                        kernel_size=10,
+                        strides=1,
+                        padding='valid',
+                        activation='relu'))
+# model.add(Dropout(0.2))
+model.add(MaxPooling1D(pool_size=pool_length))
+model.add(Convolution1D(filters=nb_filter,
+                        kernel_size=5,
+                        strides=1,
+                        padding='valid',
+                        activation='relu'))
+# model.add(Dropout(0.2))
+model.add(MaxPooling1D(pool_size=pool_length))
+model.add(Convolution1D(filters=nb_filter,
+                        kernel_size=2,
+                        strides=1,
+                        padding='valid',
+                        activation='relu'))
+# model.add(Dropout(0.2))
+from keras.utils import np_utils
+model.add(Bidirectional(LSTM(bilstm_output_size, return_sequences=True)))
+model.add(Bidirectional(LSTM(bilstm_output_size)))
+model.add(Dense(units=256,activation="relu",kernel_regularizer=regularizers.l2(0.01)))  #增加两个隐层
+# model.add(Dropout(0.3))
+model.add(Dense(units=128,activation="relu",kernel_regularizer=regularizers.l2(0.01)))
+# model.add(Dropout(0.3))
+model.add(Dense(units=64,activation="relu",kernel_regularizer=regularizers.l2(0.01)))
+# model.add(Dropout(0.5))
+model.add(Dense(1,name="my_last_layer"))
+model.add(Activation('sigmoid'))
+# model.add(Activation('Swish'))
+# model.add(Activation('relu'))
+# optimizer = Adam(lr = 0.001)
+# learnrate=0.05
+# decay=learnrate/(100-epochs)
+model.compile(loss='binary_crossentropy',
+              optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+              metrics=['accuracy'],
+              )
+# Training
+# model = KerasClassifier(build_fn=build_model, epochs=20, batch_size=1)
+# kfold = KFold(n_splits=10,shuffle=True,random_state=7)
+
+
+
+print('Training...')
+
+#plot_model(model, to_file='model.png')
+#plot_model(model,to_file='model.png')
+from keras.callbacks import History
+from keras.callbacks import ModelCheckpoint
+import keras
+history = History()
+model_checkpoint = ModelCheckpoint("temp_model.hdf5", monitor='loss', save_best_only=True)
+tb_cb = keras.callbacks.TensorBoard(log_dir='log', write_images=1, histogram_freq=0)
+callbacks = [
+    history,
+    #model_checkpoint,
+    tb_cb
+]
+
+history = model.fit(X_train, y_train, batch_size=batch_size,
+                    epochs=epochs, verbose=1, callbacks=callbacks,
+                    validation_data=(X_test, y_test))
+#model.save('data1/pretrain/fine_tune_model.h5')
+model.save_weights('data1/pretrain/fine_tune_model_weight')
+print(model.summary())
+print(history.history)
+from matplotlib import pyplot as plt
+history = history
+plt.plot()
+# summarize history for acc
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('DCNN-BiLSTM model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+print()
+#summarize history for loss
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('CNN-BiLSTM model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix,accuracy_score,f1_score,roc_auc_score,recall_score,precision_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn import metrics
+from keras.models import load_model
+import numpy as np
+from sklearn import metrics
+accy = history.history['accuracy']
+np_accy = np.array(accy)
+np.savetxt('data1/pretrain/save_acc.txt', np_accy)
+
+
+
+#model.save('data1/pretrain/premodel.h5')
+y_pred = model.predict(X_test)
+y_pred = np.around(y_pred, decimals=0).astype(int)
+print(classification_report(y_test, y_pred))
+confusionMatrix = confusion_matrix(y_test, y_pred)
+print('Confusion Matrix = ', confusionMatrix)
+trueNeg, falsePos, falseNeg, truePos = confusionMatrix.ravel()
+print('True Negative (TN) = ', trueNeg)
+print('False Positive (FP) = ', falsePos)
+print('False Negative (FN) = ', falseNeg)
+print('True Positive (TP) = ', truePos)
+print('AUC = ',roc_auc_score(y_test, y_pred))
+
